@@ -204,7 +204,7 @@ model = get_model()
 learning_rate = 1e-4
 loss_fn = torch.nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-for e in range(1):
+for e in range(50):
     train_loss = []
     for image, mask in tqdm.tqdm(data.DataLoader(dataset, batch_size = 30, shuffle = True)):
         image = image.type(torch.float).to(device)
