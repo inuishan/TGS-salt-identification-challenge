@@ -8,6 +8,15 @@ import torchvision
 import cv2
 from pathlib import Path
 from torch.nn import functional as F
+from sklearn.metrics import jaccard_similarity_score
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import torch
+from torch.utils import data
+import tqdm
+import glob
 
 directory = './input'
 
@@ -101,14 +110,17 @@ def unet11(**kwargs):
 
     return model
 
+
 device = "cuda"
+
+
 def get_model():
     model = unet11()
     model.train()
     return model.to(device)
 
 
-def load_image(path, mask = False):
+def load_image(path, mask=False):
     """
     Load image from a given path and pad it on the sides, so that eash side is divisible by 32 (newtwork requirement)
 
@@ -149,16 +161,8 @@ def load_image(path, mask = False):
         return torch.from_numpy(img).float().permute([2, 0, 1])
 
 
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
-import torch
-
-from torch.utils import data
-
 class TGSSaltDataset(data.Dataset):
-    def __init__(self, root_path, file_list, is_test = False):
+    def __init__(self, root_path, file_list, is_test=False):
         self.is_test = is_test
         self.root_path = root_path
         self.file_list = file_list
@@ -183,15 +187,14 @@ class TGSSaltDataset(data.Dataset):
         if self.is_test:
             return (image,)
         else:
-            mask = load_image(mask_path, mask = True)
+            mask = load_image(mask_path, mask=True)
             return image, mask
+
 
 depths_df = pd.read_csv(os.path.join(directory, 'train.csv'))
 
 train_path = os.path.join(directory, 'train')
 file_list = list(depths_df['id'].values)
-
-import tqdm
 
 file_list_val = file_list[::10]
 file_list_train = [f for f in file_list if f not in file_list_val]
@@ -206,7 +209,7 @@ loss_fn = torch.nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 for e in range(50):
     train_loss = []
-    for image, mask in tqdm.tqdm(data.DataLoader(dataset, batch_size = 30, shuffle = True)):
+    for image, mask in tqdm.tqdm(data.DataLoader(dataset, batch_size=30, shuffle=True)):
         image = image.type(torch.float).to(device)
         y_pred = model(image)
         loss = loss_fn(y_pred, mask.to(device))
@@ -218,7 +221,7 @@ for e in range(50):
         train_loss.append(loss.item())
 
     val_loss = []
-    for image, mask in data.DataLoader(dataset_val, batch_size = 50, shuffle = False):
+    for image, mask in data.DataLoader(dataset_val, batch_size=50, shuffle=False):
         image = image.to(device)
         y_pred = model(image)
 
@@ -227,24 +230,20 @@ for e in range(50):
 
     print("Epoch: %d, Train: %.3f, Val: %.3f" % (e, np.mean(train_loss), np.mean(val_loss)))
 
-
-import glob
-
 test_path = os.path.join(directory, 'test')
 test_file_list = glob.glob(os.path.join(test_path, 'images', '*.png'))
 test_file_list = [f.split('/')[-1].split('.')[0] for f in test_file_list]
 test_file_list[:3], test_path
 
 print(len(test_file_list))
-test_dataset = TGSSaltDataset(test_path, test_file_list, is_test = True)
+test_dataset = TGSSaltDataset(test_path, test_file_list, is_test=True)
 
 all_predictions = []
-for image in tqdm.tqdm(data.DataLoader(test_dataset, batch_size = 30)):
+for image in tqdm.tqdm(data.DataLoader(test_dataset, batch_size=30)):
     image = image[0].type(torch.float).to(device)
     y_pred = model(image).cpu().detach().numpy()
     all_predictions.append(y_pred)
 all_predictions_stacked = np.vstack(all_predictions)[:, 0, :, :]
-
 
 height, width = 101, 101
 
@@ -266,11 +265,11 @@ else:
 
 all_predictions_stacked = all_predictions_stacked[:, y_min_pad:128 - y_max_pad, x_min_pad:128 - x_max_pad]
 
-test_dataset = TGSSaltDataset(test_path, test_file_list, is_test = True)
+test_dataset = TGSSaltDataset(test_path, test_file_list, is_test=True)
 
 val_predictions = []
 val_masks = []
-for image, mask in tqdm.tqdm(data.DataLoader(dataset_val, batch_size = 30)):
+for image, mask in tqdm.tqdm(data.DataLoader(dataset_val, batch_size=30)):
     image = image.type(torch.float).to(device)
     y_pred = model(image).cpu().detach().numpy()
     val_predictions.append(y_pred)
@@ -283,8 +282,6 @@ val_predictions_stacked = val_predictions_stacked[:, y_min_pad:128 - y_max_pad, 
 
 val_masks_stacked = val_masks_stacked[:, y_min_pad:128 - y_max_pad, x_min_pad:128 - x_max_pad]
 val_masks_stacked.shape, val_predictions_stacked.shape
-
-from sklearn.metrics import jaccard_similarity_score
 
 metric_by_threshold = []
 for threshold in np.linspace(0, 1, 11):
@@ -305,19 +302,20 @@ for threshold in np.linspace(0, 1, 11):
 
 best_metric, best_threshold = max(metric_by_threshold)
 
-
 threshold = best_threshold
 binary_prediction = (all_predictions_stacked > threshold).astype(int)
+
 
 def rle_encoding(x):
     dots = np.where(x.T.flatten() == 1)[0]
     run_lengths = []
     prev = -2
     for b in dots:
-        if (b > prev+1): run_lengths.extend((b + 1, 0))
+        if (b > prev + 1): run_lengths.extend((b + 1, 0))
         run_lengths[-1] += 1
         prev = b
     return run_lengths
+
 
 all_masks = []
 for p_mask in list(binary_prediction):
@@ -326,5 +324,4 @@ for p_mask in list(binary_prediction):
 
 submit = pd.DataFrame([test_file_list, all_masks]).T
 submit.columns = ['id', 'rle_mask']
-submit.to_csv('submit_baseline2.csv.gz', compression = 'gzip', index = False)
-
+submit.to_csv('submit_baseline2.csv.gz', compression='gzip', index=False)
