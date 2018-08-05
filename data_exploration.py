@@ -17,6 +17,10 @@ import torch
 from torch.utils import data
 import tqdm
 import glob
+# from torchsample.callbacks import EarlyStopping
+
+# callbacks = [EarlyStopping(monitor='val_loss', patience=5)]
+
 
 directory = './input'
 
@@ -202,12 +206,13 @@ dataset = TGSSaltDataset(train_path, file_list_train)
 dataset_val = TGSSaltDataset(train_path, file_list_val)
 
 model = get_model()
+# model.set_callbacks(callbacks)
 #
 
 learning_rate = 1e-4
 loss_fn = torch.nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-for e in range(50):
+for e in range(100):
     train_loss = []
     for image, mask in tqdm.tqdm(data.DataLoader(dataset, batch_size=30, shuffle=True)):
         image = image.type(torch.float).to(device)
@@ -233,7 +238,8 @@ for e in range(50):
 test_path = os.path.join(directory, 'test')
 test_file_list = glob.glob(os.path.join(test_path, 'images', '*.png'))
 test_file_list = [f.split('/')[-1].split('.')[0] for f in test_file_list]
-test_file_list[:3], test_path
+
+print(test_file_list[:3], test_path)
 
 print(len(test_file_list))
 test_dataset = TGSSaltDataset(test_path, test_file_list, is_test=True)
@@ -281,7 +287,7 @@ val_masks_stacked = np.vstack(val_masks)[:, 0, :, :]
 val_predictions_stacked = val_predictions_stacked[:, y_min_pad:128 - y_max_pad, x_min_pad:128 - x_max_pad]
 
 val_masks_stacked = val_masks_stacked[:, y_min_pad:128 - y_max_pad, x_min_pad:128 - x_max_pad]
-val_masks_stacked.shape, val_predictions_stacked.shape
+print(val_masks_stacked.shape, val_predictions_stacked.shape)
 
 metric_by_threshold = []
 for threshold in np.linspace(0, 1, 11):
